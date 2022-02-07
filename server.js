@@ -159,8 +159,6 @@ function loadHystoricalData() {
         res.on('end', function () {
             console.log(body);
         });
-
-        console.debug(body);
     })
 }
 
