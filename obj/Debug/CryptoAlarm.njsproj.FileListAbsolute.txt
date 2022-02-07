@@ -1,0 +1,3 @@
+C:\Users\kleme\source\repos\CryptoAlarm\obj\Debug\CryptoAlarm.njsproj.AssemblyReference.cache
+C:\Users\kleme\source\repos\CryptoAlarm\obj\Debug\CryptoAlarm.njsproj.CoreCompileInputs.cache
+C:\Users\kleme\source\repos\CryptoAlarm\bin\Microsoft.NodejsTools.WebRole.dll

@@ -1,0 +1,12 @@
+{
+  "name": "crypto-alarm",
+  "version": "0.0.0",
+  "description": "CryptoAlarm",
+  "main": "server.js",
+  "author": {
+    "name": ""
+  },
+  "dependencies": {
+    "bybit-api": "^2.1.8"
+  }
+}
