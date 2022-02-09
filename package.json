@@ -7,6 +7,9 @@
     "name": ""
   },
   "dependencies": {
-    "bybit-api": "^2.1.8"
+    "bufferutil": "^4.0.6",
+    "bybit-api": "^2.1.8",
+    "json2csv": "^5.0.6",
+    "moment": "^2.29.1"
   }
 }

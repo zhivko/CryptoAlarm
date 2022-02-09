@@ -2,12 +2,12 @@
 var url = require('url');
 var http = require('http');
 var https = require('https');
+var moment = require('moment');
+var fs = require('fs');
 
 loadHystoricalData();
 
-
 var port = process.env.PORT || 1337;
-var fs = require('fs');
 
 const { WebsocketClient } = require('bybit-api');
 const API_KEY = process.env.API_KEY;
@@ -103,7 +103,8 @@ const requestListener = function (req, response) {
                 chartData.push(Math.random() * 50);
 
             //var result = data.replace('{{chartData}}', JSON.stringify(chartData));
-            var result = data;
+            var result = data.replace('data.csv', 'bybit_data.csv');
+            //var result = data;
             response.write(result);
             response.end();
         });
@@ -116,53 +117,136 @@ const requestListener = function (req, response) {
     }
 }
 
- const server = http.createServer(requestListener);
+const server = http.createServer(requestListener);
 
- server.listen(1337, '127.0.0.1');
+server.listen(1337, '127.0.0.1');
 
 
-function loadHystoricalData() {
+async function loadHystoricalData() {
+    // https://bybit-exchange.github.io/docs/inverse/#t-querykline
+    
     var url1 = "https://api.bybit.com/v2/public/kline/list"
 
-    var d1 = new Date();
+    var d2 = new Date();
 
     const dayCount = 200;
 
-    var endTime = parseInt(d1.getTime() / 1000);
+    var endTime = parseInt(d2.getTime() / 1000);
 
-    var d2 = new Date();
-    d2.setDate(d1.getDate() - dayCount);
+    var d1 = new Date();
+    d1.setDate(d2.getDate() - dayCount);
 
-    var startTime = parseInt(d2.getTime() / 1000);
+    var startTime = parseInt(d1.getTime() / 1000);
+    var MS_PER_MINUTE = 60000;
 
-    const requestUrl = url.parse(url.format({
-        protocol: 'https',
-        hostname: 'api.bybit.com',
-        pathname: '/v2/public/kline/list',
-        query: {
-            symbol: 'BTCUSD',
-            interval: '1',
-            from: startTime,
-            to: endTime
+    var limitMinutes = 200;
+
+    var date = new Date(d2.getTime() - limitMinutes * MS_PER_MINUTE);
+    var fs = require('fs');
+
+    fs.unlink('bybit_data.csv', function (err) {
+        if (err) return console.log(err);
+        console.log('file deleted successfully');
+    });
+
+    fs.writeFile('bybit_data.csv', "", function (err) {
+        if (err) throw err;
+        console.log('File is created successfully.');
+    });
+
+
+    while (date > d1) {
+        var done = false;
+        var dateTime = parseInt(date.getTime() / 1000);
+        var requestUrl = url.parse(url.format({
+            protocol: 'https',
+            hostname: 'api.bybit.com',
+            pathname: '/v2/public/kline/list',
+            query: {
+                symbol: 'BTCUSD',    // https://api.bybit.com/v2/public/tickers
+                interval: '1',       // Kline interval(interval) 1 - 1 minute,  3 - 3 minutes,   5 - 5 minutes ... D - 1 day, W - 1 week, M - 1 month
+                from: dateTime,     // From timestamp in seconds
+                limit: limitMinutes  // Limit for data size, max size is 200. Default as showing 200 pieces of data
+            }
+        }));
+
+        console.log(requestUrl.protocol + "/" + requestUrl.hostname + "/" + requestUrl.path);
+
+        var req = https.get({
+            hostname: requestUrl.hostname,
+            path: requestUrl.path,
+        }, (res) => {
+            var body = '';
+            res.on('data', function (chunk) {
+                body += chunk;
+            });
+            res.on('end', function () {
+                // console.log(body);
+                const obj = JSON.parse(body);
+
+                if (obj.result != null) {
+
+                    //Date,Open,High,Low,Close,Volume
+                    //27-May-14
+                    for (var i = 0, length = obj.result.length; i < length; i++) {
+
+                        date = new Date(obj.result[i].open_time * 1000);
+
+                        var timeFormatted = moment(date).format('DD-MMM-YYYY HH:mm:ss');
+                        var line = timeFormatted + "," + obj.result[i].high + "," + obj.result[i].low + "," + obj.result[i].close + "," + obj.result[i].volume + "\r\n";
+                        fs.appendFile('bybit_data.csv', line, 'utf8',
+                            // callback function
+                            function (err) {
+                                if (err) throw err;
+                                // if no error
+                                // console.log("Data is appended to file successfully.")
+                            });
+                    }
+                    date = new Date(date.getTime() - 2 * limitMinutes * MS_PER_MINUTE);
+
+                }
+                else {
+                    console.log("No historical data from ByBit");
+                }
+                done = true;
+            });
+        });
+        req.on('error', function (err) {
+            console.log("Something went wrong");
+            console.log(err);
+            done = true;
+        });
+        while (!done) {
+            await sleep(1000);
         }
-    }));
+    }
 
-    const req = https.get({
-        hostname: requestUrl.hostname,
-        path: requestUrl.path,
-    }, (res) => {
-
-        var body = '';
-        res.on('data', function (chunk) {
-            body += chunk;
-        });
-        res.on('end', function () {
-            console.log(body);
-        });
-    })
 }
 
 const toTimestamp = (strDate) => {
     const dt = new Date(strDate).getTime();
     return dt / 1000;
+}
+
+function ConvertToCSV(objArray) {
+    var array = typeof objArray != 'object' ? JSON.parse(objArray) : objArray;
+    var str = '';
+
+    for (var i = 0; i < array.length; i++) {
+        var line = '';
+        for (var index in array[i]) {
+            if (line != '') line += ','
+
+            line += array[i][index];
+        }
+
+        str += line + '\r\n';
+    }
+
+    return str;
+}
+
+
+function sleep(millis) {
+    return new Promise(resolve => setTimeout(resolve, millis));
 }
