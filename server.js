@@ -4,6 +4,7 @@ var http = require('http');
 var https = require('https');
 var moment = require('moment');
 var fs = require('fs');
+const readline = require('readline');
 
 loadHystoricalData();
 
@@ -94,6 +95,8 @@ const requestListener = function (req, response) {
         response.end();
     }
 
+    var file = req.url.substring(1, req.url.length);
+
     if (req.url.endsWith('index.html')) {
         fs.readFile('index.html', 'utf-8', function (err, data) {
             response.writeHead(200, { 'Content-Type': 'text/html' });
@@ -108,13 +111,16 @@ const requestListener = function (req, response) {
             response.write(result);
             response.end();
         });
-    } else if (req.url.endsWith('data.csv')) {
-        fs.readFile('data.csv', 'utf-8', function (err, data) {
+    }
+    /*
+    else if (req.url.endsWith(file)) {
+        fs.readFile(file, 'utf-8', function (err, data) {
             response.writeHead(200, { 'Content-Type': 'text/html' });
             response.write(data);
             response.end();
         });
     }
+    */
 }
 
 const server = http.createServer(requestListener);
@@ -127,35 +133,39 @@ async function loadHystoricalData() {
     
     var url1 = "https://api.bybit.com/v2/public/kline/list"
 
-    var d2 = new Date();
-
-    const dayCount = 200;
-
-    var endTime = parseInt(d2.getTime() / 1000);
-
-    var d1 = new Date();
-    d1.setDate(d2.getDate() - dayCount);
-
-    var startTime = parseInt(d1.getTime() / 1000);
-    var MS_PER_MINUTE = 60000;
-
-    var limitMinutes = 200;
-
-    var date = new Date(d2.getTime() - limitMinutes * MS_PER_MINUTE);
     var fs = require('fs');
 
+    /*
     fs.unlink('bybit_data.csv', function (err) {
         if (err) return console.log(err);
         console.log('file deleted successfully');
     });
-
     fs.writeFile('bybit_data.csv', "", function (err) {
         if (err) throw err;
         console.log('File is created successfully.');
     });
+    */
+    var d2 = new Date();
+    const dayCount = 3;
+    var endTime = parseInt(d2.getTime() / 1000);
+    var d1 = new Date();
+    d1.setDate(d2.getDate() - dayCount);
+    var startTime = parseInt(d1.getTime() / 1000);
+    var MS_PER_MINUTE = 60000;
+    var limitMinutes = 200;
 
+    
+    var lastLineStr;
+    const readLastLine = require('read-last-line');
+    await readLastLine.read('bybit_data.csv', 100000).then(function (lines) {
+        lastLineStr = lines;
+    }).catch(function (err) {
+        console.log(err.message);
+    });
 
-    while (date > d1) {
+    var date = d1;
+
+    while (date < d2) {
         var done = false;
         var dateTime = parseInt(date.getTime() / 1000);
         var requestUrl = url.parse(url.format({
@@ -170,7 +180,7 @@ async function loadHystoricalData() {
             }
         }));
 
-        console.log(requestUrl.protocol + "/" + requestUrl.hostname + "/" + requestUrl.path);
+        console.log("Date: " + date + " url:" + requestUrl.protocol + "/" + requestUrl.hostname + "/" + requestUrl.path);
 
         var req = https.get({
             hostname: requestUrl.hostname,
@@ -185,24 +195,30 @@ async function loadHystoricalData() {
                 const obj = JSON.parse(body);
 
                 if (obj.result != null) {
-
                     //Date,Open,High,Low,Close,Volume
                     //27-May-14
+
+                    var array = [];
                     for (var i = 0, length = obj.result.length; i < length; i++) {
-
-                        date = new Date(obj.result[i].open_time * 1000);
-
-                        var timeFormatted = moment(date).format('DD-MMM-YYYY HH:mm:ss');
+                        var open_time = new Date(obj.result[i].open_time * 1000);
+                        var timeFormatted = moment(open_time).format('DD-MMM-YYYY HH:mm:ss');
                         var line = timeFormatted + "," + obj.result[i].high + "," + obj.result[i].low + "," + obj.result[i].close + "," + obj.result[i].volume + "\r\n";
-                        fs.appendFile('bybit_data.csv', line, 'utf8',
-                            // callback function
+                        array.push({
+                            name: obj.result[i].open_time,
+                            value: line
+                        });
+                    }
+
+                    var sorted = array.sort(function (a, b) {
+                        return (a.name > b.name) ? 1 : ((b.name > a.name) ? -1 : 0)
+                    });
+
+                    for (var i = 0, length = sorted.length; i < length; i++) {
+                        fs.appendFile('bybit_data.csv', sorted[i].value, 'utf8',
                             function (err) {
                                 if (err) throw err;
-                                // if no error
-                                // console.log("Data is appended to file successfully.")
                             });
                     }
-                    date = new Date(date.getTime() - 2 * limitMinutes * MS_PER_MINUTE);
 
                 }
                 else {
@@ -217,8 +233,9 @@ async function loadHystoricalData() {
             done = true;
         });
         while (!done) {
-            await sleep(1000);
+            await sleep(100);
         }
+        date = new Date(date.getTime() + limitMinutes * MS_PER_MINUTE);
     }
 
 }

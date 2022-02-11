@@ -276,8 +276,8 @@
         var timeAnnotation = techan.plot.axisannotation()
             .axis(xAxis)
             .orient('bottom')
-            .format(d3.timeFormat('%Y-%m-%d %HH:%mm:%ss'))
-            .width(65)
+            .format(d3.timeFormat('%d.%M.%Y %HH:%mm:%ss'))
+            .width(130)
             .translate([0, dim.plot.height]);
 
         var yAxis = d3.axisRight(y);
