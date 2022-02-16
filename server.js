@@ -4,9 +4,46 @@ var http = require('http');
 var https = require('https');
 var moment = require('moment');
 var fs = require('fs');
-const readline = require('readline');
+const lineReader = require('line-reader');
 
-loadHystoricalData();
+const MS_PER_MINUTE = 60000;
+const MINUTE_PER_HOUR = 60;
+const HOUR_PER_DAY = 24;
+var limitDays = 200;
+
+
+// Kline interval(interval) 1 - 1 minute, 3 - 3 minutes, 5 - 5 minutes ...D - 1 day, W - 1 week, M - 1 month
+var kline_interval = 'D';
+
+if (fs.existsSync("bybit_data.csv")) {
+    lineReader.eachLine('bybit_data.csv', function (line, last) {
+        if (last) {
+            console.log('Last line printed.');
+            const used = process.memoryUsage().heapUsed / 1024 / 1024;
+            console.log(`The script uses approximately ${Math.round(used * 100) / 100} MB`);
+
+            var lineSplitted = line.split(',');
+            var dateStr = lineSplitted[0];
+
+
+            const lastDate = dateStr.toDate('dd.mm.yyyy hh:mm:ss');
+
+
+            loadHystoricalData(lastDate);
+        }
+    });
+}
+else
+{
+    deleteFile();
+    var d1 = new Date();
+    
+    var dayCount = 100;
+
+    const date = new Date(d1.getTime() - dayCount * HOUR_PER_DAY * MINUTE_PER_HOUR * MS_PER_MINUTE);
+
+    loadHystoricalData(date);
+}
 
 var port = process.env.PORT || 1337;
 
@@ -51,13 +88,13 @@ const wsConfig = {
 };
 const ws = new WebsocketClient(wsConfig);
 // subscribe to multiple topics at once
-ws.subscribe(['position', 'execution', 'trade']);
+ws.subscribe(['kline','BTCUSD','1m']);
 
 // and/or subscribe to individual topics on demand
-//ws.subscribe('kline.BTCUSD.1m');
+// ws.subscribe('kline.BTCUSD.1m');
 
-ws.subscribe(['candle', '1', 'BTCUSDT']);
-ws.subscribe(['instrument_info', '100ms', 'BTCUSDT']);
+// ws.subscribe(['candle', '1', 'BTCUSDT']);
+// ws.subscribe(['instrument_info', '100ms', 'BTCUSDT']);
 
 
 // Listen to events coming from websockets. This is the primary data source
@@ -88,16 +125,17 @@ ws.on('error', err => {
 
 
 const requestListener = function (req, response) {
+    var file = req.url.substring(1, req.url.length);
+
+    console.log("file: " + file + "\n");
+
     if (req.url.endsWith('/')) {
         response.writeHead(302, {
             'Location': 'http://127.0.0.1:1337/index.html'
         });
         response.end();
     }
-
-    var file = req.url.substring(1, req.url.length);
-
-    if (req.url.endsWith('index.html')) {
+    else if (req.url.endsWith('index.html')) {
         fs.readFile('index.html', 'utf-8', function (err, data) {
             response.writeHead(200, { 'Content-Type': 'text/html' });
 
@@ -106,21 +144,34 @@ const requestListener = function (req, response) {
                 chartData.push(Math.random() * 50);
 
             //var result = data.replace('{{chartData}}', JSON.stringify(chartData));
-            var result = data.replace('data.csv', 'bybit_data.csv');
             //var result = data;
+            var result = data.replace('data.csv', 'bybit_data.csv');
             response.write(result);
             response.end();
         });
     }
-    /*
     else if (req.url.endsWith(file)) {
         fs.readFile(file, 'utf-8', function (err, data) {
-            response.writeHead(200, { 'Content-Type': 'text/html' });
-            response.write(data);
+            var result = data;
+            var contType = "text/html";
+            if (file.endsWith('.html'))
+                contType = 'text/html';
+            else if (file.endsWith('.js')) {
+                result = data.replace('data.csv', 'bybit_data.csv');
+                contType = 'text/javascript';
+            }
+                
+            else if (file.endsWith('.ico'))
+                contType = "image/x-icon";
+            else if (file.endsWith('.css'))
+                contType = "text/css";
+
+
+            response.writeHead(200, { 'Content-Type': contType });
+            response.write(result);
             response.end();
         });
     }
-    */
 }
 
 const server = http.createServer(requestListener);
@@ -128,42 +179,15 @@ const server = http.createServer(requestListener);
 server.listen(1337, '127.0.0.1');
 
 
-async function loadHystoricalData() {
+async function loadHystoricalData(date) {
     // https://bybit-exchange.github.io/docs/inverse/#t-querykline
     
     var url1 = "https://api.bybit.com/v2/public/kline/list"
 
     var fs = require('fs');
 
-    /*
-    fs.unlink('bybit_data.csv', function (err) {
-        if (err) return console.log(err);
-        console.log('file deleted successfully');
-    });
-    fs.writeFile('bybit_data.csv', "", function (err) {
-        if (err) throw err;
-        console.log('File is created successfully.');
-    });
-    */
     var d2 = new Date();
-    const dayCount = 3;
-    var endTime = parseInt(d2.getTime() / 1000);
-    var d1 = new Date();
-    d1.setDate(d2.getDate() - dayCount);
-    var startTime = parseInt(d1.getTime() / 1000);
-    var MS_PER_MINUTE = 60000;
     var limitMinutes = 200;
-
-    
-    var lastLineStr;
-    const readLastLine = require('read-last-line');
-    await readLastLine.read('bybit_data.csv', 100000).then(function (lines) {
-        lastLineStr = lines;
-    }).catch(function (err) {
-        console.log(err.message);
-    });
-
-    var date = d1;
 
     while (date < d2) {
         var done = false;
@@ -174,7 +198,7 @@ async function loadHystoricalData() {
             pathname: '/v2/public/kline/list',
             query: {
                 symbol: 'BTCUSD',    // https://api.bybit.com/v2/public/tickers
-                interval: '1',       // Kline interval(interval) 1 - 1 minute,  3 - 3 minutes,   5 - 5 minutes ... D - 1 day, W - 1 week, M - 1 month
+                interval: 'D',       // Kline interval(interval) 1 - 1 minute,  3 - 3 minutes,   5 - 5 minutes ... D - 1 day, W - 1 week, M - 1 month
                 from: dateTime,     // From timestamp in seconds
                 limit: limitMinutes  // Limit for data size, max size is 200. Default as showing 200 pieces of data
             }
@@ -201,8 +225,8 @@ async function loadHystoricalData() {
                     var array = [];
                     for (var i = 0, length = obj.result.length; i < length; i++) {
                         var open_time = new Date(obj.result[i].open_time * 1000);
-                        var timeFormatted = moment(open_time).format('DD-MMM-YYYY HH:mm:ss');
-                        var line = timeFormatted + "," + obj.result[i].high + "," + obj.result[i].low + "," + obj.result[i].close + "," + obj.result[i].volume + "\r\n";
+                        var timeFormatted = moment(open_time).format('DD.MM.YYYY HH:mm:ss');
+                        var line = timeFormatted + "," + obj.result[i].open + "," + obj.result[i].high + "," + obj.result[i].low + "," + obj.result[i].close + "," + obj.result[i].close + "," + obj.result[i].volume + "\r\n";
                         array.push({
                             name: obj.result[i].open_time,
                             value: line
@@ -235,7 +259,13 @@ async function loadHystoricalData() {
         while (!done) {
             await sleep(100);
         }
-        date = new Date(date.getTime() + limitMinutes * MS_PER_MINUTE);
+
+        if (kline_interval == '1')
+            date = new Date(date.getTime() + limitMinutes * MS_PER_MINUTE);
+        else if (kline_interval == 'D') {
+            date = new Date(date.getTime() + limitDays * HOUR_PER_DAY * MINUTE_PER_HOUR * MS_PER_MINUTE);
+        }
+
     }
 
 }
@@ -267,3 +297,48 @@ function ConvertToCSV(objArray) {
 function sleep(millis) {
     return new Promise(resolve => setTimeout(resolve, millis));
 }
+
+
+function deleteFile() {
+    fs.unlink('bybit_data.csv', function (err) {
+        if (err) return console.log(err);
+        console.log('file deleted successfully');
+    });
+    fs.writeFile('bybit_data.csv', "", function (err) {
+        if (err) throw err;
+        console.log('File is created successfully.');
+    });
+
+    var line = "Date,Open,High,Low,Close,Adj Close,Volume\n";
+    fs.appendFile('bybit_data.csv', line, 'utf8',
+        function (err) {
+            if (err) throw err;
+        });
+
+}
+
+String.prototype.toDate = function (format) {
+    var normalized = this.replace(/[^a-zA-Z0-9]/g, '-');
+    var normalizedFormat = format.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-');
+    var formatItems = normalizedFormat.split('-');
+    var dateItems = normalized.split('-');
+
+    var monthIndex = formatItems.indexOf("mm");
+    var dayIndex = formatItems.indexOf("dd");
+    var yearIndex = formatItems.indexOf("yyyy");
+    var hourIndex = formatItems.indexOf("hh");
+    var minutesIndex = formatItems.indexOf("ii");
+    var secondsIndex = formatItems.indexOf("ss");
+
+    var today = new Date();
+
+    var year = yearIndex > -1 ? dateItems[yearIndex] : today.getFullYear();
+    var month = monthIndex > -1 ? dateItems[monthIndex] - 1 : today.getMonth() - 1;
+    var day = dayIndex > -1 ? dateItems[dayIndex] : today.getDate();
+
+    var hour = hourIndex > -1 ? dateItems[hourIndex] : today.getHours();
+    var minute = minutesIndex > -1 ? dateItems[minutesIndex] : today.getMinutes();
+    var second = secondsIndex > -1 ? dateItems[secondsIndex] : today.getSeconds();
+
+    return new Date(year, month, day, hour, minute, second);
+};

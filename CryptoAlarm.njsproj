@@ -28,6 +28,12 @@
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="chart.js">
+      <SubType>Code</SubType>
+    </Content>
+    <Content Include="data.csv">
+      <SubType>Code</SubType>
+    </Content>
     <Content Include="index.html" />
     <Content Include="server.js" />
     <Content Include="package.json" />
